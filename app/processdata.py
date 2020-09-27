@@ -12,36 +12,33 @@ def lambda_function_process_data():
     function_name = get_name_of_current_function()
     print(f'Inside Function = {function_name}')
 
-    # Get the json data from s3 containing the urls for processing.
-    urls = get_data_from_s3()
+    # Check database for last successful data upload to the database
+    # TODO - return a string for 'last_upload_date' needed in transform_dataset
+
+    # Get the urls
+    urls = get_urls()
 
     # Verify the url exists before attempting to download the raw data.
     verify_url_exists(urls)
 
     # Get the raw data provided from each url
     raw_data = get_actual_raw_data_from_url(urls)
-    
+
+    # Verify the raw data format
+    verify_raw_data_schema(raw_data)
+
     # Transform the data
-    transform_dataset(raw_data)
+    last_upload_date = 'test'
+    transform_validated_raw_data(raw_data, last_upload_date)
+
+    # Upload transformed data to the database
+    #upload_transformed_data_to_database(transformed_data)
 
 
-# Get the JSON file containing the urls from s3
-def get_data_from_s3():
+# Get the urls
+def get_urls():
     current_function = get_name_of_current_function()
     print(f'Inside Function = {current_function}')
-
-    #key = os.environ['FILE_NAME']
-    #bucket_name = os.environ['BUCKET_NAME']
-
-    # Get the data from S3
-    #try:
-        #s3_resource = boto3.Object('s3')
-        #s3_object = s3_resource.Object(bucket_name, key)
-        #data = s3_object.get()['Body'].read().decode('utf-8')
-        #json_data = json.loads(data)
-        #return json_data
-    #except botocore.exceptions.ClientError as error:
-        #process_error(name_of_function, error)
 
     data = [
                 { 
@@ -49,17 +46,39 @@ def get_data_from_s3():
                     'source': 'NY Times', 
                     'url': 'https://raw.githubusercontent.com/nytimes/covid-19-data/master/us.csv',
                     'filters': ['date', 'cases', 'deaths'],
+                    'columns': ['date', 'cases', 'deaths'],
                     'regions': None
                 },
                 { 
                     'data': None,
                     'source': 'John Hopkins', 
                     'url': 'https://raw.githubusercontent.com/datasets/covid-19/master/data/time-series-19-covid-combined.csv',
-                    'filters': ['Date', 'Recovered'],
+                    'filters': ['date', 'recovered'],
+                    'columns': ['date', 'country/region', 'recovered'],
                     'regions': ['US']
                 }
             ]
     return data
+
+
+# Verify the urls exist
+def verify_url_exists(url_list: list):
+    function_name = get_name_of_current_function()
+    print(f'Inside Function = {function_name}')
+
+    # Loop through each item in the url_list
+    for item in url_list:
+        url = item['url']
+        source = item['source']
+
+        # Make a GET request for each url
+        try:
+            response = requests.get(url)
+            if not response.status_code == 200:
+                error = f'Unable to get resource from url. Response Code = {response.status_code}.'
+                process_error(function_name, error)
+        except requests.exceptions.RequestException as e:
+            process_error(function_name, e)
 
 
 # Get the actual raw data
@@ -77,46 +96,78 @@ def get_actual_raw_data_from_url(url_list: list):
         try:
             # Download the CSV content using Pandas
             print(f'Attempting to download raw data for Item #{iteration}.')
-            data_file = pd.read_csv(url, error_bad_lines=False)
+            data_file = pd.read_csv(url, error_bad_lines=False, low_memory=False)
 
             # Add the dataframe to the data list
             item['data'] = data_file
             print(f'Raw data for Item #{iteration} was downloaded.')
+
         except pandas.errors as e:
             process_error(function_name, e)
 
     return url_list
 
 
-# Verify the urls exist
-def verify_url_exists(url_list: list):
+# Verify the schema of the raw data
+def verify_raw_data_schema(data_list: list):
     function_name = get_name_of_current_function()
-    print(f'Inside Function = {function_name}')
+    
+    for item in data_list:
+        item['data'].columns = [column.lower() for column in item['data'].columns]
+        actual_columns = item['data'].columns
+        
+        expected_columns = item['columns']
+        data_source = item['source']
 
-    # Loop through each item in the url_list
-    for item in url_list:
-        url = item['url']
-        source = item['source']
+        # Check the format of the data
+        if set(['date', 'cases', 'deaths']).issubset(actual_columns):
+            try:
 
-        # Make a GET request for each url
-        # Application should stop (and send an SNS message) if any url returns a non-200 status.
-        try:
-            response = requests.get(url)
-            if not response.status_code == 200:
-                error = f'Unable to get resource from url. Response Code = {response.status_code}.'
-                process_error(function_name, error)
-        except requests.exceptions.RequestException as e:
-            process_error(function_name, e)
+                # Verify the 'date' column
+                pd.notnull(item['data']['date'])
+                pd.to_datetime(item['data']['date'], format='%Y-%m-%d', errors='raise').notnull().all()
 
+                # Verify the 'cases' and 'deaths' columns
+                pd.notnull(item['data']['cases'])
+                pd.notnull(item['data']['deaths'])
+                pd.to_numeric(item['data']['cases'], downcast='integer', errors='raise').notnull().all()
+                pd.to_numeric(item['data']['deaths'], downcast='integer', errors='raise').notnull().all()
 
+            except Exception as e:
+                process_error(function_name, e)
+        elif set(['date', 'country/region', 'recovered']).issubset(actual_columns):
+            try:
+
+                # Verify the 'date' column
+                pd.notnull(item['data']['date'])
+                pd.to_datetime(item['data']['date'], format='%Y-%m-%d', errors='raise').notnull().all()
+
+                # Verify the 'recovered' column
+                pd.notnull(item['data']['recovered'])
+                pd.to_numeric(item['data']['recovered'], downcast='integer', errors='raise').notnull().all()
+
+                # Verify the 'country/region' column
+                pd.notnull(item['data']['country/region'])
+                pd.Series(item['data']['country/region']).str.isalpha()
+
+            except Exception as e:
+                process_error(function_name, e)
+        else:
+            error = f'CSV Column mismatch. Expected = {expected_columns}. Actual = {actual_columns}'
+            process_error(function_name, error)
+
+     
 # Transform the data
-def transform_dataset(data_list: list):
+def transform_validated_raw_data(data_list: list, last_upload_date):
     function_name = get_name_of_current_function()
     print(f'Inside Function = {function_name}')
 
     # Transform the data
-    transformed_data = transform_data(data_list)
-    print(transformed_data)
+    try:
+        transformed_data = transform_data(data_list, last_upload_date)
+        #print(transformed_data)
+    except Exception as e:
+        process_error(function_name, e)
 
 
 # Send the data to the database
@@ -127,8 +178,12 @@ def send_data_to_database():
 
 # Function to handle the printing of error messages
 def process_error(name_of_function, actual_error):
-    error = f'An error has occurred inside function "{name_of_function}".\n{actual_error}'
-    print(error)
+    if not actual_error:
+        error = f'An error has occurred inside function "{name_of_function}".'
+        print(error)
+    else:
+        error = f'An error has occurred inside function "{name_of_function}".\nError = {actual_error}'
+        print(error)
     # TODO - Send a SNS message with error details
     sys.exit(1)
 

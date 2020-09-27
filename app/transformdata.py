@@ -1,7 +1,7 @@
 import pandas as pd
 
 
-def transform_data(data_list):
+def transform_data(data_list, upload_date):
   
     # JOHN HOPKINS
     # - Remove non-us data from john hopkins
@@ -32,19 +32,16 @@ def transform_data(data_list):
     # Filter each dataframe by a set of filters and regions
     for item in data_list:
 
-        filters = ['adfs']#item['filters']
+        filters = item['filters']
 
         if not item['regions']:
-            try:
-                item['data'] = item['data'].filter(items=filters)
-                print(item['data'])
-            except pd.errors as e:
-                print(e)
-                break
+            item['data'] = item['data'].filter(items=filters)
+            print(item['data'])
         else:
             # Only return data for the 'regions' provided
             regions = item['regions']
             item['data'] = item['data'].loc[item['data']['country/region'].isin(regions)]
+            print(item['data'])
 
     return "hello world"
 
@@ -52,4 +49,4 @@ def transform_data(data_list):
 # this means that if this script is executed, then 
 # main() will be executed
 if __name__ == '__main__':
-    main()
+    main() 
