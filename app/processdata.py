@@ -1,38 +1,33 @@
+import os
 import sys
-import uuid
-import json
-import pandas as pd
-import requests
 import boto3
+import requests
+import pandas as pd
 from transformdata import transform_data
 
 
 # Lambda function which is invoked by a scheduled (once a day) CloudWatch event
-def lambda_function_process_data():
+def lambda_handler_process_data(event, context):
     function_name = get_name_of_current_function()
     print(f'Inside Function = {function_name}')
-
-    # Check database for last successful data upload to the database
-    # TODO - return a string for 'last_upload_date' needed in transform_dataset
 
     # Get the urls
     urls = get_urls()
 
-    # Verify the url exists before attempting to download the raw data.
-    verify_url_exists(urls)
+    # Verify the url exists
+    verify_urls_exist(urls)
 
-    # Get the raw data provided from each url
-    raw_data = get_actual_raw_data_from_url(urls)
+    # Get the raw data
+    raw_data = get_raw_data(urls)
 
     # Verify the raw data format
     verify_raw_data_schema(raw_data)
 
     # Transform the data
-    last_upload_date = 'test'
-    transform_validated_raw_data(raw_data, last_upload_date)
+    transformed_data = transform_raw_data(raw_data)
 
     # Upload transformed data to the database
-    #upload_transformed_data_to_database(transformed_data)
+    #upload_data_to_database(transformed_data)
 
 
 # Get the urls
@@ -40,36 +35,24 @@ def get_urls():
     current_function = get_name_of_current_function()
     print(f'Inside Function = {current_function}')
 
-    data = [
-                { 
-                    'data': None,
-                    'source': 'NY Times', 
-                    'url': 'https://raw.githubusercontent.com/nytimes/covid-19-data/master/us.csv',
-                    'filters': ['date', 'cases', 'deaths'],
-                    'columns': ['date', 'cases', 'deaths'],
-                    'regions': None
-                },
-                { 
-                    'data': None,
-                    'source': 'John Hopkins', 
-                    'url': 'https://raw.githubusercontent.com/datasets/covid-19/master/data/time-series-19-covid-combined.csv',
-                    'filters': ['date', 'recovered'],
-                    'columns': ['date', 'country/region', 'recovered'],
-                    'regions': ['US']
-                }
-            ]
-    return data
+    nyt_url = os.environ['nytimes']
+    jh_url = os.environ['jhopkins']
+    urls = [
+        {'source': 'nyt', 'url': nyt_url, 'data': None}, 
+        {'source': 'jh', 'url': jh_url, 'data': None}
+    ]
+    return urls
 
 
 # Verify the urls exist
-def verify_url_exists(url_list: list):
+def verify_urls_exist(url_list: list):
     function_name = get_name_of_current_function()
     print(f'Inside Function = {function_name}')
 
     # Loop through each item in the url_list
     for item in url_list:
         url = item['url']
-        source = item['source']
+        #source = item['source']
 
         # Make a GET request for each url
         try:
@@ -82,7 +65,7 @@ def verify_url_exists(url_list: list):
 
 
 # Get the actual raw data
-def get_actual_raw_data_from_url(url_list: list):
+def get_raw_data(url_list: list):
     function_name = get_name_of_current_function()
     print(f'Inside Function = {function_name}')
 
@@ -90,19 +73,14 @@ def get_actual_raw_data_from_url(url_list: list):
     for item in url_list:
 
         url = item['url']
-        source = item['source']
-        iteration += 1
 
         try:
             # Download the CSV content using Pandas
-            print(f'Attempting to download raw data for Item #{iteration}.')
-            data_file = pd.read_csv(url, error_bad_lines=False, low_memory=False)
+            raw_data = pd.read_csv(url, error_bad_lines=False, low_memory=False)
 
             # Add the dataframe to the data list
-            item['data'] = data_file
-            print(f'Raw data for Item #{iteration} was downloaded.')
-
-        except pandas.errors as e:
+            item['data'] = raw_data
+        except Exception as e:
             process_error(function_name, e)
 
     return url_list
@@ -116,9 +94,6 @@ def verify_raw_data_schema(data_list: list):
         item['data'].columns = [column.lower() for column in item['data'].columns]
         actual_columns = item['data'].columns
         
-        expected_columns = item['columns']
-        data_source = item['source']
-
         # Check the format of the data
         if set(['date', 'cases', 'deaths']).issubset(actual_columns):
             try:
@@ -153,27 +128,31 @@ def verify_raw_data_schema(data_list: list):
             except Exception as e:
                 process_error(function_name, e)
         else:
-            error = f'CSV Column mismatch. Expected = {expected_columns}. Actual = {actual_columns}'
+            error = f'Unexpected issue with the raw csv data schema.'
             process_error(function_name, error)
 
      
 # Transform the data
-def transform_validated_raw_data(data_list: list, last_upload_date):
+def transform_raw_data(data_list: list):
     function_name = get_name_of_current_function()
     print(f'Inside Function = {function_name}')
 
     # Transform the data
     try:
-        transformed_data = transform_data(data_list, last_upload_date)
-        #print(transformed_data)
+        return transform_data(data_list)
     except Exception as e:
         process_error(function_name, e)
 
 
 # Send the data to the database
-def send_data_to_database():
+def upload_data_to_database(data):
     function_name = get_name_of_current_function()
     print(f'Inside Function = {function_name}')
+
+    #dynamodb_client = boto3.client('dynamodb')
+    #print(transformed_data)
+    for d in data.index:
+        print(data['date'][d], data['cases'][d], data['deaths'][d], data['recovered'][d])
 
 
 # Function to handle the printing of error messages
@@ -188,10 +167,13 @@ def process_error(name_of_function, actual_error):
     sys.exit(1)
 
 
+def send_sns_notification(message: str):
+    print(message)
+
 # Function which returns the name of the current function
 def get_name_of_current_function():
     return sys._getframe(1).f_code.co_name
 
 
-if __name__ == "__main__":
-    lambda_function_process_data()
+#if __name__ == "__main__":
+    #lambda_function_process_data()

@@ -1,52 +1,41 @@
 import pandas as pd
+import numpy as np
 
 
-def transform_data(data_list, upload_date):
+def transform_data(data_to_transform):
   
-    # JOHN HOPKINS
-    # - Remove non-us data from john hopkins
-    # - Only take recovery data
+    # Filter each dataframe
+    for item in data_to_transform:
 
-    # Date
-    # - need to be converted to a date object
+        # Convert the date column to a date object
+        df = item['data']
+        #item['data']['date'] = pd.to_datetime(df['date'], format='%Y-%m-%d')
+        item['data']['date'] = pd.to_datetime(df['date']).dt.date
+        
+        # Filter data
+        if item['source'] == 'jh':
+            print(item['data'].head())
+            print(item['data'].dtypes)
+            # Get only the 'US' data
+            item['data'] = item['data'].loc[item['data']['country/region'].isin(['US'])]
+            item['data'] = item['data'][['date', 'recovered']]
+            item['data']['recovered'].fillna(0.0).astype('int64')
+            jh_data = item['data']
+        elif item['source'] == 'nyt':
+            nyt_data = item['data']
 
-    # us.csv
-    # date, cases, deaths
-    # 2020-01-21, 1, 0
-
-    # john hopkins.csv
-    # Date, Country/Region, Province/State, Lat, Long, Confirmed, Recovered, Deaths
-    # 2020-01-22, Afghanistan, , 33.93911, 67.709953, 0, 0, 0
-
-    # date, cases, deaths, recovered
-
-    # Data Sanitization
-    # Lowercase all filters
-    # Add underscore to any column name which has spaces
-    # - https://www.geeksforgeeks.org/python-filtering-data-with-pandas-query-method/
-    for item in data_list:
-        item['filters'] = [f.lower() for f in item['filters']]
-        item['data'].columns = [column.replace(" ", "_") for column in item['data'].columns]
-        item['data'].columns = [column.lower() for column in item['data'].columns]
-
-    # Filter each dataframe by a set of filters and regions
-    for item in data_list:
-
-        filters = item['filters']
-
-        if not item['regions']:
-            item['data'] = item['data'].filter(items=filters)
-            print(item['data'])
-        else:
-            # Only return data for the 'regions' provided
-            regions = item['regions']
-            item['data'] = item['data'].loc[item['data']['country/region'].isin(regions)]
-            print(item['data'])
-
-    return "hello world"
+    print(jh_data)
+    final_dataset = pd.merge(nyt_data, jh_data, how='right', on=['date'])
+    print(jh_data.head())
+    print(jh_data.dtypes)
+    #print('-----------------')
+    #final_dataset['recovered'].astype('int64').dtypes
+    #print(final_dataset.head())
+    #print(final_dataset.dtypes)
+    return final_dataset
 
 
 # this means that if this script is executed, then 
 # main() will be executed
-if __name__ == '__main__':
-    main() 
+#if __name__ == '__main__':
+    #main() 
