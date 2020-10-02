@@ -4,7 +4,12 @@ Description: 'CloudGuruChallenge Event Driven Python'
 
 Globals:
   Function:
-    Timeout: 120
+    Timeout: 3
+
+# Useful links for configuring the template
+# - https://docs.amazonaws.cn/en_us/AWSCloudFormation/latest/UserGuide/quickref-lambda.html
+# - https://docs.amazonaws.cn/en_us/IAM/latest/UserGuide/reference_policies_examples_lambda-access-dynamodb.html
+# - https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-events-rule.html
 
 Resources:
   CGCEventDrivenPython:
@@ -13,21 +18,63 @@ Resources:
       CodeUri: app/
       Handler: processdata.lambda_handler_process_data
       Runtime: python3.8
+      Timeout: 120
+      Role: !GetAtt LambdaExecutionRole.Arn
       Policies:
-      - AmazonDynamoDBFullAccess
       - AWSLambdaExecute
+      - Statement:
+          - Sid: SNSActions
+            Effect: Allow
+            Action:
+              - sns:*
+            Resource: '*'
+      - Statement:
+          - Sid: AWSLogs
+            Effect: Allow
+            Action:
+            - logs:*
+            Resource: arn:aws:logs:*:*:*
+      - Statement:
+          - Sid: DBActions
+            Effect: Allow
+            Action:
+              - dynamodb:PutItem
+              - dynamodb:GetItem
+              - dynamodb:DescribeTable
+              - dynamodb:UpdateItem
+              - dynamodb:GetRecords
+              - dynamodb:Scan
+            Resource: arn:aws:logs:*:*:covid_data
       Environment:
         Variables:
           nytimes: 'https://raw.githubusercontent.com/nytimes/covid-19-data/master/us.csv'
           jhopkins: 'https://raw.githubusercontent.com/datasets/covid-19/master/data/time-series-19-covid-combined.csv'
+          dbtablename: 'covid_data'
 
+  # Role For Lambda Function
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service:
+            - lambda.amazonaws.com
+          Action:
+          - sts:AssumeRole
+      Path: "/"     
+
+  # SNS Topic & Subscription
   SNSTopic:
     Type: AWS::SNS::Topic
     Properties:
       Subscription:
-        - Endpoint: "TEST"
+        - Endpoint: "kaijuking28@gmail.com"
           Protocol: email
-
+  
+  # Database
   DBCovidData:
     Type: AWS::DynamoDB::Table
     Properties: 
@@ -35,14 +82,31 @@ Resources:
       AttributeDefinitions: 
         - AttributeName: date
           AttributeType: S
-        - AttributeName: totalcases
-          AttributeType: N
       KeySchema:
         - AttributeName: date
           KeyType: HASH
-        - AttributeName: totalcases
-          KeyType: RANGE
       BillingMode: PROVISIONED
       ProvisionedThroughput: 
         ReadCapacityUnits: 5
         WriteCapacityUnits: 5
+
+  # Scheduled Event
+  EventRule: 
+    Type: AWS::Events::Rule
+    Properties: 
+      Description: An scheduled event
+      Name: ProcessCovidDataOnceDaily
+      ScheduleExpression: "cron(0 10 * * ? *)"
+      State: "ENABLED"
+      Targets: 
+        - 
+          Arn: !GetAtt "CGCEventDrivenPython"
+          Id: "TargetCGCEventDrivenPython"
+
+  PermissionForEventsToInvokeLambda: 
+    Type: AWS::Lambda::Permission
+    Properties: 
+      FunctionName: !GetAtt "CGCEventDrivenPython"
+      Action: "lambda:InvokeFunction"
+      Principal: "events.amazonaws.com"
+      SourceArn: !GetAtt "EventRule"

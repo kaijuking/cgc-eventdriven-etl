@@ -149,10 +149,36 @@ def upload_data_to_database(data):
     function_name = get_name_of_current_function()
     print(f'Inside Function = {function_name}')
 
-    #dynamodb_client = boto3.client('dynamodb')
+    
     #print(transformed_data)
-    for d in data.index:
-        print(data['date'][d], data['cases'][d], data['deaths'][d], data['recovered'][d])
+    #for d in data.index:
+       # print(data['date'][d], data['cases'][d], data['deaths'][d], data['recovered'][d])
+
+    table_name = os.environ['dbtablename']
+    dynamodb_client = boto3.client('dynamodb')
+
+    # Get total items in table
+    response = dynamodb_client.describe_table(TableName=table_name)
+    total_items = response['Table']['ItemCount']
+    print(total_items)
+    #try:
+        #for d in data.index:
+            #date = data['date'][d]
+            #cases = data['cases'][d]
+            #deaths = data['deaths'][d]
+            #recovered = data['recovered'][d]
+
+            #new_db_item = {
+            #    'date': {'S': f'{date}'},
+            #    'cases': {'N': f'{cases}'},
+            #    'deaths': {'N': f'{deaths}'},
+            #    'recovered': {'N': f'{recovered}'}
+            #}
+
+            #dynamodb_client.put_item(TableName=table_name, Item=new_db_item)
+
+    #except ClientError as error:
+        #process_error(error, 'aws')
 
 
 # Function to handle the printing of error messages

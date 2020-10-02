@@ -23,19 +23,6 @@ def transform_data(data_to_transform):
             jh_data = item['data']
         elif item['source'] == 'nyt':
             nyt_data = item['data']
-
-    print(jh_data)
+            
     final_dataset = pd.merge(nyt_data, jh_data, how='right', on=['date'])
-    print(jh_data.head())
-    print(jh_data.dtypes)
-    #print('-----------------')
-    #final_dataset['recovered'].astype('int64').dtypes
-    #print(final_dataset.head())
-    #print(final_dataset.dtypes)
     return final_dataset
-
-
-# this means that if this script is executed, then 
-# main() will be executed
-#if __name__ == '__main__':
-    #main() 
