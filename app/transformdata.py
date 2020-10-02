@@ -1,5 +1,4 @@
 import pandas as pd
-import numpy as np
 
 
 def transform_data(data_to_transform):
@@ -23,6 +22,6 @@ def transform_data(data_to_transform):
             jh_data = item['data']
         elif item['source'] == 'nyt':
             nyt_data = item['data']
-            
+
     final_dataset = pd.merge(nyt_data, jh_data, how='right', on=['date'])
     return final_dataset

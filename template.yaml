@@ -32,7 +32,7 @@ Resources:
           - Sid: AWSLogs
             Effect: Allow
             Action:
-            - logs:*
+              - logs:*
             Resource: arn:aws:logs:*:*:*
       - Statement:
           - Sid: DBActions
@@ -61,9 +61,9 @@ Resources:
         - Effect: Allow
           Principal:
             Service:
-            - lambda.amazonaws.com
+              - lambda.amazonaws.com
           Action:
-          - sts:AssumeRole
+            - sts:AssumeRole
       Path: "/"     
 
   # SNS Topic & Subscription
@@ -94,19 +94,25 @@ Resources:
   EventRule: 
     Type: AWS::Events::Rule
     Properties: 
-      Description: An scheduled event
+      Description: "EventRule"
       Name: ProcessCovidDataOnceDaily
       ScheduleExpression: "cron(0 10 * * ? *)"
-      State: "ENABLED"
       Targets: 
         - 
-          Arn: !GetAtt "CGCEventDrivenPython"
+          Arn: 
+            Fn::GetAtt: 
+              - "CGCEventDrivenPython"
+              - "Arn"
           Id: "TargetCGCEventDrivenPython"
 
   PermissionForEventsToInvokeLambda: 
     Type: AWS::Lambda::Permission
     Properties: 
-      FunctionName: !GetAtt "CGCEventDrivenPython"
+      FunctionName: 
+        Ref: "CGCEventDrivenPython"
       Action: "lambda:InvokeFunction"
       Principal: "events.amazonaws.com"
-      SourceArn: !GetAtt "EventRule"
+      SourceArn: 
+        Fn::GetAtt: 
+          - "EventRule"
+          - "Arn"

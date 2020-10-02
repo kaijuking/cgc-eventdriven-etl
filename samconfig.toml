@@ -1,0 +1,11 @@
+version = 0.1
+[default]
+[default.deploy]
+[default.deploy.parameters]
+stack_name = "cgc-event-driven-app"
+s3_bucket = "aws-sam-cli-managed-default-samclisourcebucket-r6hclz8r4ez7"
+s3_prefix = "cgc-event-driven-app"
+region = "us-east-2"
+confirm_changeset = true
+capabilities = "CAPABILITY_IAM"
+
