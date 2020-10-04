@@ -3,13 +3,12 @@ import sys
 import boto3
 import requests
 import pandas as pd
+from datetime import date, datetime
 from transformdata import transform_data
 
 
 # Lambda function which is invoked by a scheduled (once a day) CloudWatch event
 def lambda_handler_process_data(event, context):
-    function_name = get_name_of_current_function()
-    print(f'Inside Function = {function_name}')
 
     # Get the urls
     urls = get_urls()
@@ -27,13 +26,11 @@ def lambda_handler_process_data(event, context):
     transformed_data = transform_raw_data(raw_data)
 
     # Upload transformed data to the database
-    #upload_data_to_database(transformed_data)
+    upload_data_to_database(transformed_data)
 
 
 # Get the urls
 def get_urls():
-    current_function = get_name_of_current_function()
-    print(f'Inside Function = {current_function}')
 
     nyt_url = os.environ['nytimes']
     jh_url = os.environ['jhopkins']
@@ -46,8 +43,6 @@ def get_urls():
 
 # Verify the urls exist
 def verify_urls_exist(url_list: list):
-    function_name = get_name_of_current_function()
-    print(f'Inside Function = {function_name}')
 
     # Loop through each item in the url_list
     for item in url_list:
@@ -58,16 +53,15 @@ def verify_urls_exist(url_list: list):
         try:
             response = requests.get(url)
             if not response.status_code == 200:
-                error = f'Unable to get resource from url. Response Code = {response.status_code}.'
-                process_error(function_name, error)
-        except requests.exceptions.RequestException as e:
-            process_error(function_name, e)
+                message = f'Unable to get resource from url. Response Code = {response.status_code}.'
+                send_sns_notification(message)
+        except Exception as error:
+            message = f'{error}'
+            send_sns_notification(message)
 
 
 # Get the actual raw data
 def get_raw_data(url_list: list):
-    function_name = get_name_of_current_function()
-    print(f'Inside Function = {function_name}')
 
     iteration = 0
     for item in url_list:
@@ -80,15 +74,15 @@ def get_raw_data(url_list: list):
 
             # Add the dataframe to the data list
             item['data'] = raw_data
-        except Exception as e:
-            process_error(function_name, e)
+        except Exception as error:
+            message = f'{error}'
+            send_sns_notification(message)
 
     return url_list
 
 
 # Verify the schema of the raw data
 def verify_raw_data_schema(data_list: list):
-    function_name = get_name_of_current_function()
     
     for item in data_list:
         item['data'].columns = [column.lower() for column in item['data'].columns]
@@ -108,8 +102,9 @@ def verify_raw_data_schema(data_list: list):
                 pd.to_numeric(item['data']['cases'], downcast='integer', errors='raise').notnull().all()
                 pd.to_numeric(item['data']['deaths'], downcast='integer', errors='raise').notnull().all()
 
-            except Exception as e:
-                process_error(function_name, e)
+            except Exception as error:
+                message = f'{error}'
+                send_sns_notification(message)
         elif set(['date', 'country/region', 'recovered']).issubset(actual_columns):
             try:
 
@@ -125,81 +120,111 @@ def verify_raw_data_schema(data_list: list):
                 pd.notnull(item['data']['country/region'])
                 pd.Series(item['data']['country/region']).str.isalpha()
 
-            except Exception as e:
-                process_error(function_name, e)
+            except Exception as error:
+                message = f'{error}'
+                send_sns_notification(message)
         else:
-            error = f'Unexpected issue with the raw csv data schema.'
-            process_error(function_name, error)
+            message = 'Unexpected issue with the raw csv data schema.'
+            send_sns_notification(message)
 
      
 # Transform the data
 def transform_raw_data(data_list: list):
-    function_name = get_name_of_current_function()
-    print(f'Inside Function = {function_name}')
 
     # Transform the data
     try:
         return transform_data(data_list)
-    except Exception as e:
-        process_error(function_name, e)
+    except Exception as error:
+        message = f'{error}'
+        send_sns_notification(message)
 
 
 # Send the data to the database
 def upload_data_to_database(data):
-    function_name = get_name_of_current_function()
-    print(f'Inside Function = {function_name}')
-
     
-    #print(transformed_data)
-    #for d in data.index:
-       # print(data['date'][d], data['cases'][d], data['deaths'][d], data['recovered'][d])
-
-    table_name = os.environ['dbtablename']
     dynamodb_client = boto3.client('dynamodb')
-
+    table_name = os.environ['dbtablename']
+    
     # Get total items in table
-    response = dynamodb_client.describe_table(TableName=table_name)
-    total_items = response['Table']['ItemCount']
-    print(total_items)
-    #try:
-        #for d in data.index:
-            #date = data['date'][d]
-            #cases = data['cases'][d]
-            #deaths = data['deaths'][d]
-            #recovered = data['recovered'][d]
+    response = dynamodb_client.scan(TableName=table_name)
+    total_items = response['Count']
+    
+    # This is for first time data load
+    if total_items == 0:
+        try:
+            for d in data.index:
+                case_date = data['date'][d]
+                total_cases = data['cases'][d]
+                total_deaths = data['deaths'][d]
+                total_recovered = data['recovered'][d]
 
-            #new_db_item = {
-            #    'date': {'S': f'{date}'},
-            #    'cases': {'N': f'{cases}'},
-            #    'deaths': {'N': f'{deaths}'},
-            #    'recovered': {'N': f'{recovered}'}
-            #}
+                new_db_item = {
+                    'reportdate': {'S': f'{case_date}'},
+                    'cases': {'N': f'{total_cases}'},
+                    'deaths': {'N': f'{total_deaths}'},
+                    'recovered': {'N': f'{total_recovered}'},
+                    'countryname': {'S': 'US'}
+                }
 
-            #dynamodb_client.put_item(TableName=table_name, Item=new_db_item)
-
-    #except ClientError as error:
-        #process_error(error, 'aws')
-
-
-# Function to handle the printing of error messages
-def process_error(name_of_function, actual_error):
-    if not actual_error:
-        error = f'An error has occurred inside function "{name_of_function}".'
-        print(error)
+                dynamodb_client.put_item(TableName=table_name, Item=new_db_item)
+        except Exception as error:
+            message = f'{error}'
+            send_sns_notification(message)
+        
+        num_items = len(data.index)
+        message = f'Covid19 Dataset updated. Total new items added to dataset = {num_items}'
+        send_sns_notification(message)
     else:
-        error = f'An error has occurred inside function "{name_of_function}".\nError = {actual_error}'
-        print(error)
-    # TODO - Send a SNS message with error details
-    sys.exit(1)
+        # Query the database to get the last most recent item date
+        try: 
+            today = date.today()
+            d1 = today.strftime("%Y/%m/%d")
+            exp_attributes = {':cn': {'S': 'US'}}
+            key_cond_exp = "countryname = :cn"
+            query_result = dynamodb_client.query(
+                TableName=table_name,
+                Limit=1,
+                ExpressionAttributeValues=exp_attributes,
+                KeyConditionExpression=key_cond_exp,
+                ScanIndexForward=False
+            )
+
+            # Convert to date object to filter out data from the dataframe
+            datetime_str = query_result['Items'][0]['reportdate']['S']
+            datetime_object = datetime.strptime(datetime_str, '%Y-%m-%d').date()
+            df_update = data[data['date'] > datetime_object ]
+
+            # Update the database with the new data
+            if not df_update.size == 0:
+                for d in df_update.index:
+                    case_date = data['date'][d]
+                    total_cases = data['cases'][d]
+                    total_deaths = data['deaths'][d]
+                    total_recovered = data['recovered'][d]
+
+                    new_db_item = {
+                        'reportdate': {'S': f'{case_date}'},
+                        'cases': {'N': f'{total_cases}'},
+                        'deaths': {'N': f'{total_deaths}'},
+                        'recovered': {'N': f'{total_recovered}'},
+                        'countryname': {'S': 'US'}
+                    }
+
+                    dynamodb_client.put_item(TableName=table_name, Item=new_db_item)
+            else: 
+                message = 'Attempted to update databse but there were no items to add.'
+                send_sns_notification(message)
+        except Exception as error:
+            message = f'{error}'
+            send_sns_notification(message)
+        
+        num_items = len(df_update.index)
+        message = f'Covid19 Dataset updated. Total new items added to dataset = {num_items}'
+        send_sns_notification(message)
 
 
 def send_sns_notification(message: str):
-    print(message)
+    sns = boto3.client('sns')
+    sns_topic_arn = os.environ['snstopic']
+    sns.publish(TopicArn = sns_topic_arn, Message=message)
 
-# Function which returns the name of the current function
-def get_name_of_current_function():
-    return sys._getframe(1).f_code.co_name
-
-
-#if __name__ == "__main__":
-    #lambda_function_process_data()

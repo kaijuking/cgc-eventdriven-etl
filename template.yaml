@@ -4,7 +4,7 @@ Description: 'CloudGuruChallenge Event Driven Python'
 
 Globals:
   Function:
-    Timeout: 3
+    Timeout: 120
 
 # Useful links for configuring the template
 # - https://docs.amazonaws.cn/en_us/AWSCloudFormation/latest/UserGuide/quickref-lambda.html
@@ -19,52 +19,18 @@ Resources:
       Handler: processdata.lambda_handler_process_data
       Runtime: python3.8
       Timeout: 120
-      Role: !GetAtt LambdaExecutionRole.Arn
+      MemorySize: 512
       Policies:
       - AWSLambdaExecute
-      - Statement:
-          - Sid: SNSActions
-            Effect: Allow
-            Action:
-              - sns:*
-            Resource: '*'
-      - Statement:
-          - Sid: AWSLogs
-            Effect: Allow
-            Action:
-              - logs:*
-            Resource: arn:aws:logs:*:*:*
-      - Statement:
-          - Sid: DBActions
-            Effect: Allow
-            Action:
-              - dynamodb:PutItem
-              - dynamodb:GetItem
-              - dynamodb:DescribeTable
-              - dynamodb:UpdateItem
-              - dynamodb:GetRecords
-              - dynamodb:Scan
-            Resource: arn:aws:logs:*:*:covid_data
+      - AmazonDynamoDBFullAccess
+      - AmazonSNSFullAccess
+      - CloudWatchLogsFullAccess
       Environment:
         Variables:
           nytimes: 'https://raw.githubusercontent.com/nytimes/covid-19-data/master/us.csv'
           jhopkins: 'https://raw.githubusercontent.com/datasets/covid-19/master/data/time-series-19-covid-combined.csv'
-          dbtablename: 'covid_data'
-
-  # Role For Lambda Function
-  LambdaExecutionRole:
-    Type: AWS::IAM::Role
-    Properties:
-      AssumeRolePolicyDocument:
-        Version: '2012-10-17'
-        Statement:
-        - Effect: Allow
-          Principal:
-            Service:
-              - lambda.amazonaws.com
-          Action:
-            - sts:AssumeRole
-      Path: "/"     
+          dbtablename: 'COVID19DATADBv3'
+          snstopic: !Ref SNSTopic
 
   # SNS Topic & Subscription
   SNSTopic:
@@ -74,17 +40,21 @@ Resources:
         - Endpoint: "kaijuking28@gmail.com"
           Protocol: email
   
-  # Database
+  # Databases
   DBCovidData:
     Type: AWS::DynamoDB::Table
     Properties: 
-      TableName: 'covid_data'
+      TableName: 'COVID19DATADBv3'
       AttributeDefinitions: 
-        - AttributeName: date
+        - AttributeName: countryname
+          AttributeType: S
+        - AttributeName: reportdate
           AttributeType: S
       KeySchema:
-        - AttributeName: date
+        - AttributeName: countryname
           KeyType: HASH
+        - AttributeName: reportdate
+          KeyType: RANGE
       BillingMode: PROVISIONED
       ProvisionedThroughput: 
         ReadCapacityUnits: 5
