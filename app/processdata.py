@@ -5,6 +5,7 @@ import requests
 import pandas as pd
 from datetime import date, datetime
 from transformdata import transform_data
+from io import StringIO
 
 
 # Lambda function which is invoked by a scheduled (once a day) CloudWatch event
@@ -27,6 +28,9 @@ def lambda_handler_process_data(event, context):
 
     # Upload transformed data to the database
     upload_data_to_database(transformed_data)
+
+    upload_data_to_s3(transformed_data)
+
 
 
 # Get the urls
@@ -220,6 +224,42 @@ def upload_data_to_database(data):
         
         num_items = len(df_update.index)
         message = f'Covid19 Dataset updated. Total new items added to dataset = {num_items}'
+        send_sns_notification(message)
+
+
+
+# Save data to S3
+def upload_data_to_s3(data_list: list):
+    print('attempting upload_data_to_s3')
+    s3_resource = boto3.resource('s3')
+    #bucket = s3.Bucket('S3BucketCovid19Data')
+    #key = 'uscovid19data.csv'
+    #objs = list(bucket.objects.filter(Prefix=key))
+
+    #df = data_list
+    #csv_data = df.to_csv('uscovid19data.csv', index = True)
+    #print(csv_data)
+
+    try:
+        csv_buffer = StringIO()
+
+        # Write dataframe to buffer
+        data_list.to_csv(csv_buffer, index=False)
+
+        # Create S3 object
+        s3_resource = boto3.resource("s3")
+
+        # Write buffer to S3 object
+        s3_resource.Object('s3bucketcovid19data', 'uscovid19data.csv').put(Body=csv_buffer.getvalue())
+
+        #response = s3_client.upload_file(file_name, bucket, object_name)
+        #response = s3.meta.client.upload_file('/tmp/uscovid19data.csv', 'S3BucketCovid19Data', 'uscovid19data.csv')
+        #s3_client = boto3.client('s3')
+        #s3_client.upload_file('tmp/'+csv_data, "s3bucketcovid19data", "uscovid19data.csv")
+        #with open(csv_data, "rb") as f:
+            #s3_client.upload_fileobj(f, "s3bucketcovid19data", "uscovid19data.csv")
+    except Exceptin as error:
+        message = "unable to upload file to s3"
         send_sns_notification(message)
 
 

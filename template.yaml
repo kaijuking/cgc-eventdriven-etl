@@ -6,11 +6,6 @@ Globals:
   Function:
     Timeout: 120
 
-# Useful links for configuring the template
-# - https://docs.amazonaws.cn/en_us/AWSCloudFormation/latest/UserGuide/quickref-lambda.html
-# - https://docs.amazonaws.cn/en_us/IAM/latest/UserGuide/reference_policies_examples_lambda-access-dynamodb.html
-# - https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-events-rule.html
-
 Resources:
   CGCEventDrivenPython:
     Type: AWS::Serverless::Function
@@ -31,6 +26,7 @@ Resources:
           jhopkins: 'https://raw.githubusercontent.com/datasets/covid-19/master/data/time-series-19-covid-combined.csv'
           dbtablename: 'COVID19DATADBv3'
           snstopic: !Ref SNSTopic
+          s3bucketname: 's3bucketcovid19data'
 
   # SNS Topic & Subscription
   SNSTopic:
@@ -86,3 +82,66 @@ Resources:
         Fn::GetAtt: 
           - "EventRule"
           - "Arn"
+
+  S3DataBucket:
+      Type: AWS::S3::Bucket
+      Properties:
+        BucketName: s3bucketcovid19data
+        AccessControl: Private
+        VersioningConfiguration:
+          Status: Enabled
+        BucketEncryption:
+          ServerSideEncryptionConfiguration:
+            - ServerSideEncryptionByDefault:
+                SSEAlgorithm: AES256
+        PublicAccessBlockConfiguration:
+          BlockPublicAcls: true
+          BlockPublicPolicy: true
+          IgnorePublicAcls: true
+          RestrictPublicBuckets: true
+
+  GlueDatabase:
+      Type: AWS::Glue::Database
+      Properties:
+        CatalogId:
+          Ref: AWS::AccountId
+        DatabaseInput:
+          Description: AWS Glue Crawler Databse
+          Name: cgcgluedatabase
+
+  GlueCrawler:
+    Type: AWS::Glue::Crawler
+    Properties:
+      Name: "Covid19DataGlueCrawler"
+      Role: !GetAtt GlueRole.Arn
+      DatabaseName: !Ref GlueDatabase
+      Targets:
+        S3Targets:
+          - Path: !Ref S3DataBucket
+      Schedule:
+        ScheduleExpression: "cron(0/10 * ? * MON-FRI *)"
+  
+  GlueRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          -
+            Effect: "Allow"
+            Principal:
+              Service:
+                - "glue.amazonaws.com"
+            Action:
+              - "sts:AssumeRole"
+      Path: "/"
+      Policies:
+        -
+          PolicyName: "root"
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              -
+                Effect: "Allow"
+                Action: "*"
+                Resource: "*"
