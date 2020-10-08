@@ -4,7 +4,7 @@ Description: 'CloudGuruChallenge Event Driven Python'
 
 Globals:
   Function:
-    Timeout: 120
+    Timeout: 240
 
 Resources:
   CGCEventDrivenPython:
@@ -13,7 +13,6 @@ Resources:
       CodeUri: app/
       Handler: processdata.lambda_handler_process_data
       Runtime: python3.8
-      Timeout: 120
       MemorySize: 512
       Policies:
       - AWSLambdaExecute
