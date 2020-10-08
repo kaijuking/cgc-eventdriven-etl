@@ -32,7 +32,7 @@ Resources:
     Type: AWS::SNS::Topic
     Properties:
       Subscription:
-        - Endpoint: "kaijuking28@gmail.com"
+        - Endpoint: "PUT EMAIL HERE"
           Protocol: email
   
   # Databases
